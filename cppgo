@@ -1,0 +1,353 @@
+#!/bin/bash
+
+# --- Colors ---
+BLUE='\e[36m'
+RED='\e[31m'
+GREEN='\e[32m'
+RESET='\e[0m'
+
+
+# --- Universal Dependency Check ---
+
+check_dependencies() {
+    local commands=("cmake" "ninja" "gcc" "g++" "git" "sed" "grep")
+    local missing=()
+
+    for cmd in "${commands[@]}"; do
+        if ! command -v "$cmd" &> /dev/null; then
+            missing+=("$cmd")
+        fi
+    done
+
+    if [ ${#missing[@]} -ne 0 ]; then
+        echo -e "${RED}Error: Missing required tools: ${missing[*]}${RESET}"
+        echo "Please install them using your package manager (pacman, apt, dnf, etc.)"
+        exit 1
+    fi
+}
+#
+# ==================== #
+   check_dependencies
+# ==================== #
+#
+
+# --- Help Function ---
+show_help() {
+    echo -e "${BLUE}C++ Project Manager${RESET}"
+    echo "Usage: cppgo [COMMAND]"
+    echo ""
+    echo "Commands:"
+    echo "   g, generate    Generate project structure"
+    echo "   n, new         Create a new .cpp or .h file"
+    echo "   b, build       Build the project (Debug/Release)"
+    echo "   x, execute     Run the compiled executable"
+    echo "   d, delete      Remove a file from the project"
+    echo "   r, rename      Rename an existing file"
+    echo "   c, clean       Wipe the build directory"
+    echo ""
+    echo "   h, help        Show this help message"
+    echo "   v, version     Show version info"
+    echo ""
+    echo "Note:"
+    echo "   You must be inside your project directory for this tool to work."
+}
+
+# --- Create File Function ---
+
+create_file() {
+
+read -p "Enter File Name: " filename_entered
+filename=$(echo "${filename_entered}" | tr ' ' '_')
+
+echo -e "${BLUE}Choose a file format:${RESET}
+1) Translation unit file (.cpp)
+2) Header file           (.h  )
+"
+read -p "Enter Number (Default 1): " filetype
+
+if [[ "$filetype" == "2" ]]; then
+    file="${filename}.h"
+    target_dir="include"
+    touch "${target_dir}/${file}"
+    echo "#pragma once" > "${target_dir}/${file}"
+else
+    file="${filename}.cpp"
+    target_dir="src"
+    touch "${target_dir}/${file}"
+fi
+
+echo "Created ${target_dir}/${file}"
+
+# Update CMakeLists.txt ONLY if it's a .cpp file
+if [[ "$file" == *.cpp ]]; then
+    echo -e "${BLUE}>>> Updating CMakeLists.txt${RESET}"
+    sed -i "/src\/main.cpp/a \    src/${file}" CMakeLists.txt
+fi
+
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=1
+
+}
+
+
+# --- Delete File Function ---
+delete_file(){
+
+echo "====================|| src/ ||===================="
+for f in src/*.cpp ; do echo $f; done
+echo "=================================================="
+echo "==================|| include/ ||=================="
+for f in include/*.h ; do echo $f; done
+echo "=================================================="
+
+read -p "Enter filename to delete (with extension): " target
+
+if [[ "$target" == "main.cpp" ]]; then
+    echo -e "${RED}Error: 'main.cpp' is required for the project. Deletion denied.${RESET}"
+    exit 1
+fi
+
+if [ ! -f "src/$target" ] && [ ! -f "include/$target" ]; then
+    echo -e "${RED}Error: File '$target' not found in src/ or include/.${RESET}"
+    exit 1
+fi
+
+if [[ "$target" == *.cpp ]]; then
+    file_path="src/$target"
+    rm "$file_path"
+    echo -e "${BLUE}>>> Deleted $file_path${RESET}"
+    echo -e "${BLUE}>>> Removing from CMakeLists.txt...${RESET}"
+    sed -i "/\bsrc\/$target\b/d" CMakeLists.txt
+    echo -e "${BLUE}>>> Refreshing CMake...${RESET}"
+    cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=1
+
+elif [[ "$target" == *.h ]]; then
+    file_path="include/$target"
+    rm "$file_path"
+    echo -e "${BLUE}>>> Deleted $file_path${RESET}"
+
+fi
+
+echo -e "\e[32m>>> Done!${RESET}"
+
+
+}
+
+
+# --- Rename File Function ---
+
+rename_file(){
+
+
+echo "====================|| src/ ||===================="
+for f in src/*.cpp ; do echo $f; done
+echo "=================================================="
+echo "==================|| include/ ||=================="
+for f in include/*.h ; do echo $f; done
+echo "=================================================="
+
+read -p "Enter filename to rename (with extension): " target
+read -p "Enter new name for [ ${target} ] (with extension) : " new_name
+if [[ "$target" == "main.cpp" ]]; then
+    echo -e "${RED}Error: 'main.cpp' is required for the project. Renaming denied.${RESET}"
+    exit 1
+fi
+
+if [ ! -f "src/$target" ] && [ ! -f "include/$target" ]; then
+    echo -e "${RED}Error: File '$target' not found in src/ or include/.${RESET}"
+    exit 1
+fi
+
+if [[ "$target" == *.cpp && "$new_name" != *.cpp ]]; then
+    echo -e "${RED}Error: The old extension doesn't match the new.${RESET}"
+    exit 1
+fi
+
+if [[ "$target" == *.h && "$new_name" != *.h ]]; then
+    echo -e "${RED}Error: The old extension doesn't match the new.${RESET}"
+    exit 1
+fi
+
+
+if [[ "$target" == *.cpp ]]; then
+    mv "src/$target" "src/$new_name"
+    echo -e "${BLUE}>>> Changed src/$target to src/$new_name ${RESET}"
+    echo -e "${BLUE}>>> Changing CMakeLists.txt...${RESET}"
+    sed -i "/\bsrc\/$target\b/d" CMakeLists.txt
+    sed -i "/src\/main.cpp/a \    src/${new_name}" CMakeLists.txt
+    echo -e "${BLUE}>>> Refreshing CMake...${RESET}"
+    cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=1
+
+elif [[ "$target" == *.h ]]; then
+    mv "include/$target" "include/$new_name"
+    echo -e "${BLUE}>>> Changed include/$target to include/$new_name ${RESET}"
+
+
+fi
+
+echo -e "\e[32m>>> Done!${RESET}"
+}
+
+
+# --- Build Project ---
+
+build_project(){
+echo -e "${BLUE}Select Build Type:${RESET}
+1) Debug 
+2) Release"
+read -p "Enter Choice (Default 1): " choice
+
+if [[ "$choice" == "2" ]]; then
+    TYPE="Release"
+else
+    TYPE="Debug"
+fi
+
+echo -e "${BLUE}>>> Configuring and Building as ${TYPE}...${RESET}"
+
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=$TYPE -DCMAKE_EXPORT_COMPILE_COMMANDS=1
+cmake --build build
+
+
+# Check if the build was successful
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}>>> Build Successful!${RESET}"
+    
+    # Only run the executable if we are in Debug mode
+    if [[ "$TYPE" == "Debug" ]]; then
+        echo -e "${BLUE}>>> Launching Project...${RESET}"
+	project=$(grep -oP 'project\(\K[^)]+' CMakeLists.txt)
+        ./build/"${project}"
+    fi
+else
+    echo -e "\e[31m>>> Build Failed!${RESET}"
+fi
+
+
+}
+
+
+# --- Run Project ---
+execute_project() {
+    if [ ! -d "build" ]; then
+        echo -e "${RED}Error: Build directory not found. Run 'cpp-tool build' first.${RESET}"
+        exit 1
+    fi
+
+    # Find the project name from CMakeLists.txt
+    project=$(grep -oP 'project\(\K[^)]+' CMakeLists.txt)
+    
+    if [ -f "./build/${project}" ]; then
+        echo -e "${BLUE}>>> Running ${project}...${RESET}"
+        ./build/"${project}"
+    else
+        echo -e "${RED}Error: Executable '${project}' not found in build folder.${RESET}"
+        exit 1
+    fi
+}
+
+
+# --- Generate Project Structure ---
+
+generate(){
+
+read -p "$(echo -e "${BLUE} >>> Enter Project Name: ${RESET}")" project_name
+project=$(echo "${project_name}" | tr ' ' '_')
+
+mkdir -p "${project}"
+cd "${project}"
+
+echo -e "${BLUE} >>> Creating Directories For The Project ${RESET}"
+mkdir -p src build include assets
+
+##==================================================================================##
+
+cat << EOF > CMakeLists.txt
+cmake_minimum_required(VERSION 3.10)
+project(${project})
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+set(SOURCE_FILES 
+    src/main.cpp
+)
+
+add_executable(${project} \${SOURCE_FILES})
+
+target_include_directories(${project} PUBLIC include)
+target_compile_options(${project} PRIVATE -Wall -Wextra -Wpedantic)
+
+file(COPY "\${CMAKE_CURRENT_SOURCE_DIR}/assets" DESTINATION "\${CMAKE_CURRENT_BINARY_DIR}")
+
+
+EOF
+
+##==================================================================================##
+
+cat << EOF > src/main.cpp
+
+
+int main () { }
+
+EOF
+
+##==================================================================================##
+
+echo -e "${BLUE} >>> Building Project Structure ${RESET}"
+
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=1
+ln -svf build/compile_commands.json .
+
+echo -e "${GREEN} >>> Project '${project}' is ready! ${RESET}"
+
+}
+
+
+# --- The Gatekeeper ---
+
+if [[ "$1" != "g" && "$1" != "generate" && "$1" != "h" && "$1" != "help" && "$1" != "v" && "$1" != "version" ]]; then
+    if [[ ! -f "CMakeLists.txt" ]]; then
+        echo -e "${RED}Error: No CMakeLists.txt found. Are you in a project folder?${RESET}"
+        exit 1
+    fi
+fi
+
+
+# --- Main Logic ---
+
+case "$1" in
+    g|generate)
+        generate
+        ;;
+    n|new)
+        create_file
+        ;;
+    x|execute)
+        execute_project
+        ;;
+    b|build)
+        build_project
+        ;;
+    d|delete)
+        delete_file
+        ;;
+    r|rename)
+        rename_file
+        ;;
+    c|clean)
+        echo -e "${BLUE}Cleaning build files...${RESET}"
+        rm -rf build/ compile_commands.json
+        ;;
+    h|help)
+        show_help
+        ;;
+    v|version)
+        echo -e "${BLUE}cpp-tool version 1.0.0${RESET}"
+        ;;
+    *)
+        echo -e "${RED}Error: Unknown command '$1'${RESET}"
+        show_help
+        exit 1
+        ;;
+esac
+
