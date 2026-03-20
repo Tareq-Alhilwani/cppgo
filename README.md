@@ -3,7 +3,8 @@ A lightweight, automated CLI manager for C++ projects on Linux. This tool handle
 
 ## ✨ Features
 - **Project Generation**: Instant structure with `src/`, `include/`, and `assets/`.
-- **Smart CMake**: Automatically updates `CMakeLists.txt` when you add, rename, or delete files.- **Build System**: Interactive Debug/Release modes using **Ninja** for lightning-fast builds.
+- **Smart CMake**: Automatically updates `CMakeLists.txt` when you add, rename, or delete files.
+- **Build System**: Interactive Debug/Release modes using **Ninja** for lightning-fast builds.
 - **LSP Support**: Automatically generates `compile_commands.json` for Clangd/Neovim/VS Code.
 - **Safety**: Built-in protection to prevent accidental deletion of `main.cpp`.
 
